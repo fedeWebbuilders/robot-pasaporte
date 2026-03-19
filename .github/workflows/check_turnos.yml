@@ -1,0 +1,32 @@
+name: Monitor de Turnos Argentina
+
+on:
+  schedule:
+    # Se ejecuta cada 30 minutos
+    - cron: '*/30 * * * *'
+  workflow_dispatch: # Permite ejecutarlo manualmente para probar
+
+jobs:
+  check-api:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar API de Turnos
+        run: |
+          RESPONSE=$(curl -s 'https://turnos-api.argentina.gob.ar/api/v1.0/disponibilidad/fechas?tramiteId=2725&provincia=31&localidad=2842&puntoAtencionId=3605' \
+            -H 'accept: application/json, text/plain, */*' \
+            -H 'referer: https://turnos.argentina.gob.ar/' \
+            -H 'user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36')
+          
+          # Extraer el tamaño del array 'result' usando jq (que ya viene en GHA)
+          COUNT=$(echo $RESPONSE | jq '.result | length')
+          
+          echo "Cantidad de fechas encontradas: $COUNT"
+          echo "COUNT=$COUNT" >> $GITHUB_ENV
+          echo "RAW_RESPONSE=$RESPONSE" >> $GITHUB_ENV
+
+      - name: Enviar Notificación si hay turnos
+        if: env.COUNT > 0
+        run: |
+          MESSAGE="🚨 ¡HAY TURNOS DISPONIBLES! 🚨%0ASe encontraron ${{ env.COUNT }} fechas.%0AData: ${{ env.RAW_RESPONSE }}"
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_TOKEN }}/sendMessage" \
+            -d "chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$MESSAGE"
